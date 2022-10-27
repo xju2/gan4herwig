@@ -138,20 +138,20 @@ def read(filename, max_evts=None, testing_frac=0.1) -> GAN_INPUT_DATA_TYPE:
     
     arrays = np.load(filename)
     truth_in = arrays['out_truth'].astype(np.float32)
-    input_4vec = arrays['input_4vec'].astype(np.float32)
+    cond_info = arrays['cond_info'].astype(np.float32)
 
     shuffle(truth_in)
-    shuffle(input_4vec)
-    print(truth_in.shape, input_4vec.shape)
+    shuffle(cond_info)
+    print(truth_in.shape, cond_info.shape)
 
     # Split the data into training and testing
     # <HACK, FIXME, NOTE>
     # <HACK, For now a maximum of 10,000 events are used for testing, xju>
-    num_test_evts = int(input_4vec.shape[0]*testing_frac)
+    num_test_evts = int(cond_info.shape[0]*testing_frac)
     if num_test_evts < 10_000:
         print("WARNING: num_test_evts < 10_000")
 
-    test_in, train_in = input_4vec[:num_test_evts], input_4vec[num_test_evts:max_evts]
+    test_in, train_in = cond_info[:num_test_evts], cond_info[num_test_evts:max_evts]
     test_truth, train_truth = truth_in[:num_test_evts], truth_in[num_test_evts:max_evts]
     xlabels = ['phi', 'theta']
 

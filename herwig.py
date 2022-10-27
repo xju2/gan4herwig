@@ -1,48 +1,9 @@
 import numpy as np
-import pandas as pd
 
-from utils import GAN_INPUT_DATA_TYPE
-from utils import shuffle
 from utils import read_dataframe
 from utils import split_to_float
 from utils import InputScaler
 from utils import boost
-
-def read(filename, max_evts=None, testing_frac=0.1) -> GAN_INPUT_DATA_TYPE:
-    """
-    This Herwig dataset is for the "ClusterDecayer" study.
-    Each event has q1, q1, cluster, h1, h2.
-    I define 3 modes:
-    0) both q1, q2 are with Pert=1
-    1) only one of q1 and q2 is with Pert=1
-    2) neither q1 nor q2 are with Pert=1
-    3) at least one quark with Pert=1
-    """
-    if type(filename) == list:
-        if len(filename) > 1:
-            print(len(filename),"too many files!")
-        filename = filename[0]
-    
-    arrays = np.load(filename)
-    truth_in = arrays['out_truth'].astype(np.float32)
-    input_4vec = arrays['input_4vec'].astype(np.float32)
-
-    shuffle(truth_in)
-    shuffle(input_4vec)
-    print(truth_in.shape, input_4vec.shape)
-
-    # Split the data into training and testing
-    # <HACK, FIXME, NOTE>
-    # <HACK, For now a maximum of 10,000 events are used for testing, xju>
-    num_test_evts = int(input_4vec.shape[0]*testing_frac)
-    if num_test_evts < 10_000:
-        print("WARNING: num_test_evts < 10_000")
-
-    test_in, train_in = input_4vec[:num_test_evts], input_4vec[num_test_evts:max_evts]
-    test_truth, train_truth = truth_in[:num_test_evts], truth_in[num_test_evts:max_evts]
-    xlabels = ['phi', 'theta']
-
-    return (train_in, train_truth, test_in, test_truth, xlabels)
 
 
 def convert_cluster_decay(filename, outname, mode=2,
@@ -99,8 +60,12 @@ def convert_cluster_decay(filename, outname, mode=2,
         print(f"mode {mode} is not known! We will use all events.")
 
     cluster = c[[1, 2, 3, 4]][selections].values
+    
+    h1_types = h1[[0]][selections]
+    h2_types = h2[[0]][selections]
     h1 = h1[[1, 2, 3, 4]][selections]
     h2 = h2[[1, 2, 3, 4]][selections]
+
 
     ## to tell if the quark info is perserved to hadrons
     pert1 = q1[5][selections]
@@ -135,25 +100,29 @@ def convert_cluster_decay(filename, outname, mode=2,
     phi, theta = get_angles(new_inputs[:, -4:])
     
     out_truth = np.stack([phi, theta], axis=1)
-    input_4vec = cluster
+    cond_info = cluster
     if with_quark:
         print("add quark information")
         ## <NOTE, assuming the two quarks are back-to-back, xju>
         q_phi, q_theta = get_angles(new_inputs[:, 4:8])
         quark_angles = np.stack([q_phi, q_theta], axis=1)
-        input_4vec = np.concatenate([input_4vec, quark_angles], axis=1)
+        cond_info = np.concatenate([cond_info, quark_angles], axis=1)
 
     if with_pert:
         print("add pert information")
         pert_inputs = np.stack([pert1, pert2], axis=1)
-        input_4vec = np.concatenate([input_4vec, pert_inputs], axis=1)
+        cond_info = np.concatenate([cond_info, pert_inputs], axis=1)
 
     scaler = InputScaler()
-    # the input 4vector is the cluster 4vector
-    input_4vec = scaler.transform(input_4vec, outname+"_scalar_input4vec.pkl")
+    
+    # cond_info: conditional information
+    # out_truth: the output hadron angles
+    cond_info = scaler.transform(cond_info, outname+"_scalar_input4vec.pkl")
     out_truth = scaler.transform(out_truth, outname+"_scalar_outtruth.pkl")
-
-    np.savez(outname, input_4vec=input_4vec, out_truth=out_truth)
+    
+    # add hadron types to the output, [phi, theta, type1, type2]
+    out_truth = np.concatenate([out_truth, h1_types, h2_types], axis=1)
+    np.savez(outname, cond_info=cond_info, out_truth=out_truth)
 
 
 def check_converted_data(outname):
